@@ -1,0 +1,9 @@
+RAG Systems Profile:
+
+	Website-Links: 
+		1. https://riteshshergill.medium.com/rag-for-large-documents-7c2400b871d4
+		2.https://medium.com/spark-nlp/spark-nlp-6-3-3-modernbert-embeddings-vector-db-integration-and-layout-aware-document-processing-1c0d4d38a174
+		
+		3.https://levelup.gitconnected.com/building-a-rag-pipeline-for-10m-documents-with-near-zero-hallucination-788e4b5b7f25
+		
+		4. 
