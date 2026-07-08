@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multi-Agent Enterprise RAG Architecture</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #5b6475;
+      --blue: #2e74b5;
+      --border: #d8dee8;
+      --fill: #f6f8fb;
+    }
+    body {
+      font-family: Calibri, Arial, sans-serif;
+      color: var(--ink);
+      max-width: 980px;
+      margin: 36px auto;
+      padding: 0 28px 56px;
+      line-height: 1.45;
+      background: #fff;
+    }
+    h1 {
+      color: var(--blue);
+      font-size: 1.55rem;
+      margin: 2rem 0 0.75rem;
+    }
+    h2 {
+      color: var(--blue);
+      font-size: 1.2rem;
+      margin: 1.4rem 0 0.55rem;
+    }
+    h3 {
+      color: #1f4d78;
+      font-size: 1.05rem;
+      margin: 1rem 0 0.45rem;
+    }
+    p { margin: 0.55rem 0; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.9rem 0 1.2rem;
+      font-size: 0.94rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 7px 9px;
+      vertical-align: top;
+    }
+    th {
+      background: var(--fill);
+      font-weight: 700;
+    }
+    pre {
+      background: var(--fill);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    pre.mermaid {
+      background: #fff;
+      text-align: center;
+    }
+    code {
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 0.92em;
+    }
+  </style>
+</head>
+<body>
+  <p>Multi-Agent Enterprise RAG Architecture</p>
+  <p>Kafka + Spark + Docling/OCR + Vector DB + LangGraph/ADK + Gemini/Vertex AI</p>
+  <p>This architecture is designed for enterprise-scale document analysis over huge document volumes: PDFs, scanned PDFs, DOCX, PPTX, TXT, images, contracts, RFPs, finance documents, HR policies, technical manuals, and mixed-layout documents.</p>
+  <p>The design is multi-agent, but not “LLM agent for everything.” The correct approach is:</p>
+  <p>Deterministic distributed systems for heavy processing+Specialized agents for orchestration and decisions+LLMs only for reasoning, hard enrichment, verification, and final answers</p>
+  <p>ADK is suitable for production-grade agent systems because its documentation describes it as an open-source framework for building, debugging, and deploying enterprise agents, with support for graph workflows, multi-agent workflows, model routing, Gemini, local models, observability, evaluation, and deployment to Cloud Run/GKE/Agent Runtime. LangChain gives the model/tool harness, LangGraph gives advanced orchestration with durable execution and human-in-the-loop support, and LangSmith provides tracing, debugging, and evaluation.</p>
+  <h1>1. Whole Project Architecture</h1>
+  <pre class="mermaid">
+flowchart TB
+  ES[&quot;Enterprise Sources&lt;br/&gt;SharePoint, S3, Blob, GCS,&lt;br/&gt;FTP, Email, APIs, DB&quot;] --&gt; K[&quot;Kafka Event Bus&quot;]
+  K --&gt; ING[&quot;Ingestion Agent Group&quot;]
+  ING --&gt; RAW[&quot;Raw Object Storage&lt;br/&gt;/raw/tenant/doc_id/version/file&quot;]
+  RAW --&gt; CLS[&quot;Spark Classification Cluster&quot;]
+  CLS --&gt; DIP[&quot;Document Intelligence Profile&quot;]
+  DIP --&gt; ROUTER[&quot;Parser Router Agent&quot;]
+  ROUTER --&gt; SINGLE[&quot;Single Parser Path&quot;]
+  ROUTER --&gt; ENSEMBLE[&quot;Multi-Parser Ensemble Path&quot;]
+  ROUTER --&gt; MANUAL[&quot;Manual Review / Dead Letter&quot;]
+  SINGLE --&gt; PARSER[&quot;Parser Agent Group&lt;br/&gt;Docling, Unstructured,&lt;br/&gt;pdfplumber, OCR&quot;]
+  ENSEMBLE --&gt; PARSER
+  PARSER --&gt; JUDGE[&quot;Parser Quality Judge Agent&quot;]
+  JUDGE --&gt; MD[&quot;Canonical Markdown&lt;br/&gt;Builder Agent&quot;]
+  MD --&gt; JSON[&quot;Structured JSON Builder&lt;br/&gt;Agent&quot;]
+  MD --&gt; MDS[(&quot;Processed Markdown Store&quot;)]
+  JSON --&gt; JSONS[(&quot;Processed JSON Store&quot;)]
+  MDS --&gt; CHUNK[&quot;Chunking Agent Group&quot;]
+  JSONS --&gt; CHUNK
+  CHUNK --&gt; CSTORE[&quot;Chunk Store + Metadata DB&quot;]
+  CSTORE --&gt; EMB[&quot;Spark Embedding Agent&lt;br/&gt;Group&quot;]
+  EMB --&gt; VW[&quot;Vector Writer Agent&quot;]
+  VW --&gt; VDB[(&quot;Vector DB&lt;br/&gt;Milvus/Qdrant/Weaviate/OpenSearch&quot;)]
+  VW --&gt; BM25[(&quot;Keyword Index&lt;br/&gt;OpenSearch/BM25&quot;)]
+  VW --&gt; META[(&quot;Metadata DB&lt;br/&gt;PostgreSQL&quot;)]
+  USER[&quot;User Question&quot;] --&gt; ORCH[&quot;Query-Time Multi-Agent&lt;br/&gt;Orchestrator&lt;br/&gt;LangGraph / ADK&quot;]
+  ORCH --&gt; ACL[&quot;Security + ACL Agent&quot;]
+  ACL --&gt; QP[&quot;Query Planner Agent&quot;]
+  QP --&gt; DRA[&quot;Domain Retrieval Agents&quot;]
+  DRA --&gt; VDB
+  DRA --&gt; BM25
+  DRA --&gt; META
+  DRA --&gt; FUSE[&quot;Fusion + Dedup Agent&quot;]
+  FUSE --&gt; RERANK[&quot;Reranker Agent&quot;]
+  RERANK --&gt; VERIFY[&quot;Evidence Verifier Agent&quot;]
+  VERIFY --&gt; ANSWER[&quot;Answer Synthesis Agent&lt;br/&gt;Gemini / Open Model / Vertex AI&quot;]
+  ANSWER --&gt; FINAL[&quot;Cited Answer or Insufficient Evidence&quot;]
+  </pre>
+  <p>Figure 1. Complete Multi-Agent RAG System</p>
+  <h1>2. Main Design Layers</h1>
+  <table>
+    <tbody>
+      <tr><th>Layer</th><th>Purpose</th><th>Recommended Tools</th></tr>
+      <tr><td>Event backbone</td><td>Move document events between services</td><td>Kafka</td></tr>
+      <tr><td>Distributed compute</td><td>High-speed batch/stream processing</td><td>Spark, Spark Structured Streaming</td></tr>
+      <tr><td>Document intelligence</td><td>Parse PDFs, DOCX, PPTX, OCR, tables, layout</td><td>Docling, Unstructured, pdfplumber, Tesseract, PaddleOCR</td></tr>
+      <tr><td>Agent orchestration</td><td>Multi-agent workflows and state transitions</td><td>LangGraph, Google ADK</td></tr>
+      <tr><td>Model/tool abstraction</td><td>LLM, tool, retriever interfaces</td><td>LangChain</td></tr>
+      <tr><td>Observability</td><td>Trace every agent/tool/model call</td><td>LangSmith, OpenTelemetry, Prometheus, Grafana</td></tr>
+      <tr><td>Storage</td><td>Raw files, markdown, JSON, metadata</td><td>Object storage, PostgreSQL, Iceberg/Delta</td></tr>
+      <tr><td>Search</td><td>Semantic + keyword retrieval</td><td>Milvus/Qdrant/Weaviate/OpenSearch</td></tr>
+      <tr><td>LLM reasoning</td><td>Query planning, enrichment, verification, answer</td><td>Gemini/Vertex AI, vLLM-hosted open models</td></tr>
+    </tbody>
+  </table>
+  <p>Spark is useful here because Spark’s Kafka integration supports parallelism, Kafka partition correspondence, and offset metadata access, which fits document-event processing. Docling is a strong parser base because it supports multiple formats, advanced PDF understanding, layout, reading order, table structure, OCR, Markdown/JSON export, and integrations with LangChain/LlamaIndex/CrewAI/Haystack/vector databases. Unstructured is useful as a complementary parser because it supports partitioning, cleaning, extracting, staging, chunking, embedding workflows, and document elements/metadata; however, its open-source library is better for prototyping than production unless you build the required scaling and governance around it.</p>
+  <h1>3. Agent Catalog</h1>
+  <table>
+    <tbody>
+      <tr><th>Agent Group</th><th>Main Responsibility</th></tr>
+      <tr><td>Ingestion Agent Group</td><td>Detect files, validate, checksum, version, store raw file, publish event</td></tr>
+      <tr><td>Classification Agent Group</td><td>Identify file type, OCR need, layout complexity, document category, risk</td></tr>
+      <tr><td>Parser Router Agent</td><td>Decide single parser, ensemble parser, OCR path, layout path, or manual review</td></tr>
+      <tr><td>Parser Agent Group</td><td>Run Docling, OCR, pdfplumber, Unstructured, layout-aware extraction</td></tr>
+      <tr><td>Parser Quality Judge Agent</td><td>Score parser outputs and decide best/merged result</td></tr>
+      <tr><td>Markdown Builder Agent</td><td>Create canonical LLM-ready markdown</td></tr>
+      <tr><td>JSON Builder Agent</td><td>Store machine-readable page/layout/table/image structure</td></tr>
+      <tr><td>Chunking Agent Group</td><td>Create structure-aware parent/child chunks</td></tr>
+      <tr><td>Embedding Agent Group</td><td>Choose embedding model and generate vectors at scale</td></tr>
+      <tr><td>Vector Writer Agent</td><td>Idempotently write vectors, metadata, ACLs, versions</td></tr>
+      <tr><td>Query Planner Agent</td><td>Convert user question into retrieval plan</td></tr>
+      <tr><td>Domain Retrieval Agents</td><td>Search contracts, RFP, finance, policies, technical docs, etc.</td></tr>
+      <tr><td>Fusion + Dedup Agent</td><td>Merge keyword/vector/domain results</td></tr>
+      <tr><td>Reranker Agent</td><td>Select best evidence chunks</td></tr>
+      <tr><td>Evidence Verifier Agent</td><td>Check claims, citations, ACLs, latest versions</td></tr>
+      <tr><td>Answer Synthesis Agent</td><td>Generate final answer from verified evidence</td></tr>
+      <tr><td>Audit/Observability Agent</td><td>Track lineage, traces, latency, cost, quality</td></tr>
+    </tbody>
+  </table>
+  <h1>4. Ingestion Agent Group</h1>
+  <h2>Purpose</h2>
+  <p>This agent group receives file discovery events and prepares reliable raw-document records.</p>
+  <p>It should not parse the file yet. It only answers:</p>
+  <ul>
+    <li>Is this file valid?</li>
+  </ul>
+  <ul>
+    <li>Is it new or duplicate?</li>
+  </ul>
+  <ul>
+    <li>Where is it stored?</li>
+  </ul>
+  <ul>
+    <li>Who can access it?</li>
+  </ul>
+  <ul>
+    <li>What event should happen next?</li>
+  </ul>
+  <pre class="mermaid">
+flowchart LR
+  SRC[&quot;Source Event&lt;br/&gt;SharePoint/S3/Blob/API&quot;] --&gt; WATCH[&quot;Source Watcher Agent&quot;]
+  WATCH --&gt; VALID[&quot;File Validation Agent&quot;]
+  VALID --&gt; CHECK[&quot;Checksum Agent&quot;]
+  VALID --&gt; DL[&quot;Dead Letter&lt;br/&gt;invalid/corrupt/unsupported&quot;]
+  CHECK --&gt; VERSION[&quot;Version Detection Agent&quot;]
+  VERSION --&gt; SEC[&quot;Security Metadata Agent&quot;]
+  SEC --&gt; STORE[&quot;Raw Storage Agent&quot;]
+  STORE --&gt; RAW[(&quot;Raw Object Store&quot;)]
+  STORE --&gt; K[(&quot;Kafka:&lt;br/&gt;document.raw.stored&quot;)]
+  </pre>
+  <p>Figure 2. Ingestion Agent Architecture</p>
+  <h2>Workflow</h2>
+  <h1>1. Receive document.discovered event.</h1>
+  <h1>2. Validate extension, MIME type, file size, checksum.</h1>
+  <h1>3. Detect duplicate or new version.</h1>
+  <h1>4. Extract source metadata and ACL.</h1>
+  <h1>5. Store original file in raw object storage.</h1>
+  <h1>6. Publish document.raw.stored.</h1>
+  <h1>7. Send corrupted/encrypted/unsupported files to dead-letter/manual-review queue.</h1>
+  <h2>Output Event</h2>
+  <p>{ &quot;event_type&quot;: &quot;document.raw.stored&quot;, &quot;document_id&quot;: &quot;doc_789&quot;, &quot;tenant_id&quot;: &quot;company_a&quot;, &quot;version&quot;: 4, &quot;raw_file_uri&quot;: &quot;s3://rag/raw/company_a/doc_789/v4/original.pdf&quot;, &quot;checksum&quot;: &quot;sha256:abc123&quot;, &quot;security_acl&quot;: [&quot;legal_team&quot;, &quot;finance_team&quot;]}</p>
+  <p>Kafka should carry metadata and object-storage pointers, not large file bytes. Kafka’s official documentation exposes key concepts, APIs, Connect, Streams, operations, and security as first-class areas, which supports this event-bus role.</p>
+  <h1>5. Document Classification Agent Group</h1>
+  <h2>Purpose</h2>
+  <p>This is the first intelligence layer. It decides the document complexity before parsing.</p>
+  <p>It generates a Document Intelligence Profile.</p>
+  <pre class="mermaid">
+flowchart TB
+  IN[(&quot;Kafka:&lt;br/&gt;document.raw.stored&quot;)] --&gt; SPARK[&quot;Spark Classification Job&quot;]
+  SPARK --&gt; FT[&quot;File Type Agent&quot;]
+  SPARK --&gt; TXT[&quot;Text Layer Agent&quot;]
+  SPARK --&gt; OCR[&quot;OCR Need Agent&quot;]
+  SPARK --&gt; LAYOUT[&quot;Layout Complexity Agent&quot;]
+  SPARK --&gt; TABLE[&quot;Table Density Agent&quot;]
+  SPARK --&gt; IMAGE[&quot;Image Density Agent&quot;]
+  SPARK --&gt; LANG[&quot;Language Agent&quot;]
+  SPARK --&gt; CAT[&quot;Document Category Agent&quot;]
+  SPARK --&gt; RISK[&quot;Risk / Sensitivity Agent&quot;]
+  FT --&gt; DIP[&quot;Document Intelligence&lt;br/&gt;Profile&quot;]
+  TXT --&gt; DIP
+  OCR --&gt; DIP
+  LAYOUT --&gt; DIP
+  TABLE --&gt; DIP
+  IMAGE --&gt; DIP
+  LANG --&gt; DIP
+  CAT --&gt; DIP
+  RISK --&gt; DIP
+  DIP --&gt; OUT[(&quot;Kafka:&lt;br/&gt;document.classification.completed&quot;)]
+  </pre>
+  <p>Figure 3. Classification Agent Architecture</p>
+  <h2>Workflow</h2>
+  <h1>1. Spark consumes document.raw.stored events.</h1>
+  <h1>2. Read file metadata and lightweight document signals.</h1>
+  <h1>3. Detect file type: PDF, DOCX, PPTX, TXT, image, email.</h1>
+  <h1>4. Detect digital text layer vs scanned content.</h1>
+  <h1>5. Estimate OCR need.</h1>
+  <h1>6. Estimate layout/table/image complexity.</h1>
+  <h1>7. Classify domain: contract, RFP, finance, HR, policy, technical.</h1>
+  <h1>8. Detect sensitivity: PII, PHI, PCI, confidential, legal hold.</h1>
+  <h1>9. Generate Document Intelligence Profile.</h1>
+  <h2>Document Intelligence Profile</h2>
+  <p>{ &quot;document_id&quot;: &quot;doc_789&quot;, &quot;file_type&quot;: &quot;pdf&quot;, &quot;document_category&quot;: &quot;contract&quot;, &quot;text_density_score&quot;: 0.91, &quot;ocr_required_score&quot;: 0.05, &quot;table_density_score&quot;: 0.72, &quot;image_density_score&quot;: 0.34, &quot;layout_complexity_score&quot;: 0.68, &quot;classification_confidence&quot;: 0.86, &quot;recommended_path&quot;: &quot;docling_plus_pdfplumber&quot;}</p>
+  <h1>6. Parser Router Agent</h1>
+  <h2>Purpose</h2>
+  <p>The Parser Router Agent chooses the right extraction path.</p>
+  <p>This is where your system becomes smarter than normal RAG.</p>
+  <pre class="mermaid">
+flowchart TB
+  DIP[&quot;Document Intelligence&lt;br/&gt;Profile&quot;] --&gt; ROUTER[&quot;Parser Router Agent&quot;]
+  ROUTER --&gt; C1{&quot;Confidence &gt;= 0.85?&quot;}
+  C1 --&gt;|Yes| SINGLE[&quot;Single Parser Path&quot;]
+  C1 --&gt;|No| C2{&quot;Confidence 0.60 - 0.85?&quot;}
+  C2 --&gt;|Yes| VALIDATOR[&quot;Primary Parser + Validator Path&quot;]
+  C2 --&gt;|No| ENSEMBLE[&quot;Multi-Parser Ensemble Path&quot;]
+  ROUTER --&gt; O{&quot;OCR Score High?&quot;}
+  O --&gt;|Yes| OCR[&quot;Force OCR Path&quot;]
+  ROUTER --&gt; T{&quot;Table Density High?&quot;}
+  T --&gt;|Yes| TABLE[&quot;Add Table Extraction Agent&quot;]
+  ROUTER --&gt; L{&quot;Image/Layout Complex?&quot;}
+  L --&gt;|Yes| VISION[&quot;Add Layout Vision Agent&quot;]
+  ROUTER --&gt; BAD{&quot;Corrupt/Encrypted?&quot;}
+  BAD --&gt;|Yes| DL[&quot;Manual Review / Dead Letter&quot;]
+  </pre>
+  <p>Figure 4. Parser Router Agent Architecture</p>
+  <h2>Routing Rules</h2>
+  <p>classification_confidence &gt;= 0.85 -&gt; single parser0.60 &lt;= classification_confidence &lt; 0.85 -&gt; primary parser + validator parserclassification_confidence &lt; 0.60 -&gt; multi-parser ensembleocr_required_score &gt;= 0.70 -&gt; OCR-first pathtable_density_score &gt;= 0.60 -&gt; add table extraction agentimage_density_score &gt;= 0.60 or layout_complexity_score &gt;= 0.70 -&gt; add layout/image caption agentcorrupt/encrypted/password-protected -&gt; manual review or dead letter</p>
+  <h1>7. Parser Agent Group</h1>
+  <h2>Purpose</h2>
+  <p>This group extracts text, tables, images, layout, page numbers, bounding boxes, and metadata.</p>
+  <pre class="mermaid">
+flowchart TB
+  DEC[&quot;Parser Router Decision&quot;] --&gt; GROUP[&quot;Parser Agent Group&quot;]
+  GROUP --&gt; DOCLING[&quot;Docling Agent&lt;br/&gt;layout, reading order,&lt;br/&gt;tables, markdown/json&quot;]
+  GROUP --&gt; UNSTRUCT[&quot;Unstructured Agent&lt;br/&gt;elements, metadata,&lt;br/&gt;partitioning&quot;]
+  GROUP --&gt; PDF[&quot;pdfplumber Agent&lt;br/&gt;PDF text/tables&quot;]
+  GROUP --&gt; OCR[&quot;OCR Agent&lt;br/&gt;Tesseract/PaddleOCR/Surya OCR&quot;]
+  GROUP --&gt; OFFICE[&quot;Office Agent&lt;br/&gt;DOCX/PPTX extraction&quot;]
+  GROUP --&gt; LAYOUT[&quot;Layout Vision Agent&lt;br/&gt;image/text alignment&quot;]
+  GROUP --&gt; LLM[&quot;LLM Fragment Agent&lt;br/&gt;only unclear fragments&quot;]
+  DOCLING --&gt; STORE[&quot;Parser Output Store&quot;]
+  UNSTRUCT --&gt; STORE
+  PDF --&gt; STORE
+  OCR --&gt; STORE
+  OFFICE --&gt; STORE
+  LAYOUT --&gt; STORE
+  LLM --&gt; STORE
+  </pre>
+  <p>Figure 5. Parser Agent Group Architecture</p>
+  <h2>Tool Responsibility</h2>
+  <table>
+    <tbody>
+      <tr><th>Agent</th><th>Best For</th></tr>
+      <tr><td>Docling Agent</td><td>Main document parser, layout, reading order, tables, Markdown/JSON</td></tr>
+      <tr><td>Unstructured Agent</td><td>Element extraction, quick parsing, alternate validation</td></tr>
+      <tr><td>pdfplumber Agent</td><td>PDF tables and exact text-region extraction</td></tr>
+      <tr><td>OCR Agent</td><td>Scanned pages, image text</td></tr>
+      <tr><td>Office Agent</td><td>DOCX/PPTX structure, slides, comments, notes</td></tr>
+      <tr><td>Layout Vision Agent</td><td>Images, diagrams, chart-text alignment</td></tr>
+      <tr><td>LLM Fragment Agent</td><td>Only hard fragments, not entire documents</td></tr>
+    </tbody>
+  </table>
+  <p>Docling’s feature list includes parsing for PDF/DOCX/PPTX/XLSX/HTML/images/plain text and advanced PDF understanding such as page layout, reading order, table structure, code, formulas, image classification, Markdown export, JSON export, OCR, VLM support, and local execution.</p>
+  <h1>8. Multi-Parser Ensemble Agent</h1>
+  <h2>Purpose</h2>
+  <p>For difficult documents, do not trust one parser. Run multiple parsers, compare results, and merge the best pieces.</p>
+  <pre class="mermaid">
+flowchart TB
+  DOC[&quot;Complex / Low Confidence&lt;br/&gt;Document&quot;] --&gt; ENS[&quot;Multi-Parser Ensemble&lt;br/&gt;Agent&quot;]
+  ENS --&gt; D[&quot;Docling Output&quot;]
+  ENS --&gt; U[&quot;Unstructured Output&quot;]
+  ENS --&gt; P[&quot;pdfplumber Table Output&quot;]
+  ENS --&gt; O[&quot;OCR Output&quot;]
+  ENS --&gt; V[&quot;Layout Vision Output&quot;]
+  ENS --&gt; L[&quot;LLM Fragment Output&quot;]
+  D --&gt; J[&quot;Parser Quality Judge&quot;]
+  U --&gt; J
+  P --&gt; J
+  O --&gt; J
+  V --&gt; J
+  L --&gt; J
+  J --&gt; BT[&quot;Best Text Source&quot;]
+  J --&gt; BTA[&quot;Best Table Source&quot;]
+  J --&gt; BO[&quot;Best OCR Source&quot;]
+  J --&gt; BI[&quot;Best Image Caption Source&quot;]
+  BT --&gt; MD[&quot;Canonical Markdown Builder&quot;]
+  BTA --&gt; MD
+  BO --&gt; MD
+  BI --&gt; MD
+  </pre>
+  <p>Figure 6. Multi-Parser Ensemble Architecture</p>
+  <h2>Quality Score</h2>
+  <p>final_parse_score = 0.20 * text_coverage_score + 0.15 * reading_order_score + 0.15 * table_quality_score + 0.15 * layout_preservation_score + 0.10 * OCR_confidence_score + 0.10 * image_caption_coverage_score + 0.10 * metadata_completeness_score - 0.05 * duplicate_noise_score</p>
+  <h2>Important Rule</h2>
+  <p>Do not run this expensive path for every document.</p>
+  <p>Simple document -&gt; one parserMedium document -&gt; primary parser + validatorComplex document -&gt; parser ensembleCritical document -&gt; parser ensemble + human review if confidence is low</p>
+  <h1>9. Parser Quality Judge Agent</h1>
+  <h2>Purpose</h2>
+  <p>The quality judge decides whether the parser output is trustworthy.</p>
+  <pre class="mermaid">
+flowchart LR
+  OUT[&quot;Parser Outputs&quot;] --&gt; TC[&quot;Text Coverage Check&quot;]
+  OUT --&gt; RO[&quot;Reading Order Check&quot;]
+  OUT --&gt; TQ[&quot;Table Quality Check&quot;]
+  OUT --&gt; OC[&quot;OCR Confidence Check&quot;]
+  OUT --&gt; LP[&quot;Layout Preservation Check&quot;]
+  OUT --&gt; ND[&quot;Noise/Duplicate Check&quot;]
+  TC --&gt; SCORE[&quot;Parse Confidence Score&quot;]
+  RO --&gt; SCORE
+  TQ --&gt; SCORE
+  OC --&gt; SCORE
+  LP --&gt; SCORE
+  ND --&gt; SCORE
+  SCORE --&gt; TH{&quot;Score &gt;= Threshold?&quot;}
+  TH --&gt;|Yes| APPROVE[&quot;Approve for Markdown&quot;]
+  TH --&gt;|No| FALLBACK[&quot;Fallback Parser / LLM&lt;br/&gt;Fragment / Human Review&quot;]
+  </pre>
+  <p>Figure 7. Parser Quality Judge Workflow</p>
+  <p>Output</p>
+  <p>{ &quot;document_id&quot;: &quot;doc_789&quot;, &quot;best_text_source&quot;: &quot;docling&quot;, &quot;best_table_source&quot;: &quot;pdfplumber&quot;, &quot;best_ocr_source&quot;: &quot;paddleocr&quot;, &quot;parse_confidence&quot;: 0.92, &quot;manual_review_required&quot;: false}</p>
+  <h1>10. Canonical Markdown Builder Agent</h1>
+  <h2>Purpose</h2>
+  <p>This agent creates the final LLM-friendly document.</p>
+  <p>The markdown file becomes the trusted “clean document” used for chunking, audit, and citations.</p>
+  <pre class="mermaid">
+flowchart TB
+  BEST[&quot;Best Parser Outputs&quot;] --&gt; MB[&quot;Markdown Builder Agent&quot;]
+  MB --&gt; H[&quot;Normalize Headings&quot;]
+  MB --&gt; A[&quot;Preserve Page Anchors&quot;]
+  MB --&gt; T[&quot;Preserve Tables&quot;]
+  MB --&gt; I[&quot;Insert Image Captions&quot;]
+  MB --&gt; R[&quot;Remove Header/Footer Noise&quot;]
+  MB --&gt; M[&quot;Attach Metadata&quot;]
+  MB --&gt; C[&quot;Attach Confidence Scores&quot;]
+  H --&gt; CAN[&quot;Canonical Markdown&quot;]
+  A --&gt; CAN
+  T --&gt; CAN
+  I --&gt; CAN
+  R --&gt; CAN
+  M --&gt; CAN
+  C --&gt; CAN
+  CAN --&gt; STORE[(&quot;Processed Markdown Store&quot;)]
+  </pre>
+  <p>Figure 8. Markdown Builder Architecture</p>
+  <h2>Example Output</h2>
+  <h1>Vendor ABC Master Services Agreementmetadata: document_id: doc_789 version: 4 document_type: contract parser_path: docling_plus_pdfplumber parse_confidence: 0.92 security_acl: - legal_team - finance_team---## Page 2: Payment TermsInvoices shall be paid within thirty calendar days after approval.### Table: Pricing Schedule| Service | Unit Cost | Billing Frequency ||---|---:|---|| Data Processing | 1200 | Monthly |## Page 5: Approval Workflow DiagramImage description:The diagram shows vendor invoice submission, legal approval, finance approval,and payment execution.</h1>
+  <h1>11. Structured JSON Builder Agent</h1>
+  <h2>Purpose</h2>
+  <p>Markdown is good for humans and LLMs. JSON is good for systems.</p>
+  <p>The JSON stores page coordinates, tables, image locations, confidence, and lineage.</p>
+  <pre class="mermaid">
+flowchart TB
+  PM[&quot;Parser Outputs + Markdown&quot;] --&gt; JB[&quot;Structured JSON Builder&lt;br/&gt;Agent&quot;]
+  JB --&gt; PS[&quot;Page Structure&quot;]
+  JB --&gt; SH[&quot;Section Hierarchy&quot;]
+  JB --&gt; PE[&quot;Paragraph Elements&quot;]
+  JB --&gt; TO[&quot;Table Objects&quot;]
+  JB --&gt; IO[&quot;Image Objects&quot;]
+  JB --&gt; BB[&quot;Bounding Boxes&quot;]
+  JB --&gt; OCR[&quot;OCR Confidence&quot;]
+  JB --&gt; PL[&quot;Parser Lineage&quot;]
+  PS --&gt; DOC[&quot;Processed JSON Document&quot;]
+  SH --&gt; DOC
+  PE --&gt; DOC
+  TO --&gt; DOC
+  IO --&gt; DOC
+  BB --&gt; DOC
+  OCR --&gt; DOC
+  PL --&gt; DOC
+  DOC --&gt; STORE[(&quot;Processed JSON Store&quot;)]
+  </pre>
+  <p>Figure 9. Structured JSON Builder Architecture</p>
+  <h2>JSON Example</h2>
+  <p>{ &quot;document_id&quot;: &quot;doc_789&quot;, &quot;version&quot;: 4, &quot;sections&quot;: [ { &quot;title&quot;: &quot;Payment Terms&quot;, &quot;page_start&quot;: 2, &quot;page_end&quot;: 2, &quot;elements&quot;: [ { &quot;type&quot;: &quot;paragraph&quot;, &quot;text&quot;: &quot;Invoices shall be paid within thirty calendar days after approval.&quot;, &quot;bbox&quot;: [100, 250, 500, 290], &quot;confidence&quot;: 0.96 } ] } ]}</p>
+  <h1>12. Chunking Agent Group</h1>
+  <h2>Purpose</h2>
+  <p>Chunking should depend on document type.</p>
+  <p>A contract should not be chunked the same way as a PPTX or finance spreadsheet.</p>
+  <pre class="mermaid">
+flowchart TB
+  IN[&quot;Canonical Markdown +&lt;br/&gt;Structured JSON&quot;] --&gt; ROUTER[&quot;Chunking Router Agent&quot;]
+  ROUTER --&gt; CONTRACT[&quot;Contract Chunking Agent&lt;br/&gt;clauses, obligations&quot;]
+  ROUTER --&gt; RFP[&quot;RFP Chunking Agent&lt;br/&gt;requirements, Q/A&quot;]
+  ROUTER --&gt; POLICY[&quot;Policy Chunking Agent&lt;br/&gt;sections, subsections&quot;]
+  ROUTER --&gt; FIN[&quot;Finance Chunking Agent&lt;br/&gt;tables, approvals, notes&quot;]
+  ROUTER --&gt; PPT[&quot;PPTX Chunking Agent&lt;br/&gt;slides, notes, images&quot;]
+  ROUTER --&gt; TECH[&quot;Technical Chunking Agent&lt;br/&gt;procedures, APIs, steps&quot;]
+  ROUTER --&gt; IMG[&quot;Image/Table Chunking&lt;br/&gt;Agent&quot;]
+  CONTRACT --&gt; PARENT[&quot;Parent-Child Chunk Agent&quot;]
+  RFP --&gt; PARENT
+  POLICY --&gt; PARENT
+  FIN --&gt; PARENT
+  PPT --&gt; PARENT
+  TECH --&gt; PARENT
+  IMG --&gt; PARENT
+  PARENT --&gt; QA[&quot;Chunk QA Agent&quot;]
+  QA --&gt; STORE[&quot;Chunk Store&quot;]
+  </pre>
+  <p>Figure 10. Chunking Agent Group Architecture</p>
+  <h2>Chunking Rules</h2>
+  <table>
+    <tbody>
+      <tr><th>Document Type</th><th>Chunking Strategy</th></tr>
+      <tr><td>Contract</td><td>Clause + section parent chunks</td></tr>
+      <tr><td>RFP</td><td>Requirement/question/answer chunks</td></tr>
+      <tr><td>Policy</td><td>Heading/subheading chunks</td></tr>
+      <tr><td>PPTX</td><td>Slide parent + bullet/image child chunks</td></tr>
+      <tr><td>Finance</td><td>Table chunks + approval notes</td></tr>
+      <tr><td>Technical docs</td><td>Procedure/API/step chunks</td></tr>
+      <tr><td>Scanned PDF</td><td>Page/section chunks with OCR confidence</td></tr>
+      <tr><td>Image-heavy document</td><td>Image caption + nearby text chunk</td></tr>
+    </tbody>
+  </table>
+  <h2>Chunk Object</h2>
+  <p>{ &quot;chunk_id&quot;: &quot;doc_789_v4_chunk_021&quot;, &quot;document_id&quot;: &quot;doc_789&quot;, &quot;version&quot;: 4, &quot;chunk_type&quot;: &quot;contract_clause&quot;, &quot;section_path&quot;: &quot;Payment Terms &gt; Invoice Approval&quot;, &quot;page_start&quot;: 2, &quot;page_end&quot;: 2, &quot;text&quot;: &quot;Invoices shall be paid within thirty calendar days after approval.&quot;, &quot;parent_chunk_id&quot;: &quot;doc_789_v4_section_payment_terms&quot;, &quot;security_acl&quot;: [&quot;legal_team&quot;, &quot;finance_team&quot;], &quot;source_markdown_uri&quot;: &quot;s3://processed_markdown/company_a/doc_789/v4/document.md&quot;}</p>
+  <h1>13. Embedding Agent Group</h1>
+  <h2>Purpose</h2>
+  <p>This group generates embeddings at scale using Spark.</p>
+  <p>It should not embed bad chunks, empty chunks, unauthorized chunks, or old versions incorrectly.</p>
+  <pre class="mermaid">
+flowchart TB
+  K[(&quot;Kafka:&lt;br/&gt;document.embedding.requested&quot;)] --&gt; SPARK[&quot;Spark Embedding Job&quot;]
+  SPARK --&gt; ROUTER[&quot;Embedding Model Router&lt;br/&gt;Agent&quot;]
+  ROUTER --&gt; TEXT[&quot;Text Embedding Agent&quot;]
+  ROUTER --&gt; TABLE[&quot;Table Embedding Agent&quot;]
+  ROUTER --&gt; IMG[&quot;Image Caption Embedding&lt;br/&gt;Agent&quot;]
+  ROUTER --&gt; MULTI[&quot;Multilingual Embedding&lt;br/&gt;Agent&quot;]
+  ROUTER --&gt; TECH[&quot;Technical/Code Embedding&lt;br/&gt;Agent&quot;]
+  TEXT --&gt; VAL[&quot;Vector Validation Agent&quot;]
+  TABLE --&gt; VAL
+  IMG --&gt; VAL
+  MULTI --&gt; VAL
+  TECH --&gt; VAL
+  VAL --&gt; OK{&quot;Valid Vector?&quot;}
+  OK --&gt;|Yes| WRITER[&quot;Vector Writer Agent&quot;]
+  OK --&gt;|No| DL[&quot;Embedding Dead Letter /&lt;br/&gt;Rechunk&quot;]
+  WRITER --&gt; VDB[(&quot;Vector DB&quot;)]
+  WRITER --&gt; META[(&quot;Metadata DB&quot;)]
+  WRITER --&gt; KEY[(&quot;Keyword Index&quot;)]
+  </pre>
+  <p>Figure 11. Embedding Agent Architecture</p>
+  <h2>Embedding Model Choices</h2>
+  <table>
+    <tbody>
+      <tr><th>Chunk Type</th><th>Model Choice</th></tr>
+      <tr><td>Normal text</td><td>ModernBERT, BGE, E5, GTE</td></tr>
+      <tr><td>Long technical text</td><td>ModernBERT / long-context embedding</td></tr>
+      <tr><td>Multilingual text</td><td>BGE-M3, multilingual-E5, Gemini embeddings</td></tr>
+      <tr><td>Tables</td><td>table-to-text + table metadata embedding</td></tr>
+      <tr><td>Images</td><td>caption embedding, not raw image by default</td></tr>
+      <tr><td>Code</td><td>code-aware embedding</td></tr>
+      <tr><td>Low-confidence OCR</td><td>skip, review, or embed with confidence penalty</td></tr>
+    </tbody>
+  </table>
+  <h1>14. Vector Writer Agent</h1>
+  <h2>Purpose</h2>
+  <p>The Vector Writer Agent writes vectors safely.</p>
+  <pre class="mermaid">
+flowchart TB
+  IN[&quot;Validated Embeddings&quot;] --&gt; VW[&quot;Vector Writer Agent&quot;]
+  VW --&gt; DIM[&quot;Check Vector Dimension&quot;]
+  VW --&gt; META[&quot;Check Metadata&lt;br/&gt;Completeness&quot;]
+  VW --&gt; ACL[&quot;Check ACL Exists&quot;]
+  VW --&gt; VER[&quot;Check Version / Latest Flag&quot;]
+  VW --&gt; ID[&quot;Build Vector ID&quot;]
+  VW --&gt; UPSERT[&quot;Idempotent Upsert&quot;]
+  VW --&gt; KEY[&quot;Write Keyword Index&quot;]
+  VW --&gt; MDB[&quot;Write Metadata DB&quot;]
+  VW --&gt; EVENT[&quot;Emit index.ready Event&quot;]
+  UPSERT --&gt; VDB[(&quot;Vector DB&lt;br/&gt;Collection/Partition&quot;)]
+  KEY --&gt; BM25[(&quot;OpenSearch / BM25&quot;)]
+  MDB --&gt; PG[(&quot;PostgreSQL Metadata DB&quot;)]
+  </pre>
+  <p>Figure 12. Vector Writer Architecture</p>
+  <p>Milvus is a strong enterprise vector DB option because its documentation describes open-source and distributed deployment modes, Kubernetes-based distributed deployment for billion-scale or larger scenarios, ANN search, filtering search, hybrid search, full-text BM25 search, and reranking.</p>
+  <h1>15. Query-Time Multi-Agent Orchestration</h1>
+  <h2>Purpose</h2>
+  <p>This is the live user-question flow.</p>
+  <p>Use LangGraph or ADK here, not Spark.</p>
+  <p>Spark is for heavy background processing. Query-time retrieval needs low-latency orchestration.</p>
+  <pre class="mermaid">
+flowchart TB
+  U[&quot;User Question&quot;] --&gt; C[&quot;Conversation Agent&quot;]
+  C --&gt; ACL[&quot;Security + ACL Agent&quot;]
+  ACL --&gt; QU[&quot;Query Understanding Agent&quot;]
+  QU --&gt; PLAN[&quot;Retrieval Planner Agent&quot;]
+  PLAN --&gt; D{&quot;Single Domain or Multi&lt;br/&gt;Domain?&quot;}
+  D --&gt;|Single| SINGLE[&quot;Single Domain Retrieval&lt;br/&gt;Agent&quot;]
+  D --&gt;|Multi| MORCH[&quot;Multi-Domain Retrieval&lt;br/&gt;Orchestrator&quot;]
+  MORCH --&gt; CONTRACT[&quot;Contract Retrieval Agent&quot;]
+  MORCH --&gt; RFP[&quot;RFP Retrieval Agent&quot;]
+  MORCH --&gt; FIN[&quot;Finance Retrieval Agent&quot;]
+  MORCH --&gt; POL[&quot;Policy Retrieval Agent&quot;]
+  MORCH --&gt; TECH[&quot;Technical Docs Retrieval&lt;br/&gt;Agent&quot;]
+  SINGLE --&gt; FUSE[&quot;Fusion + Dedup Agent&quot;]
+  CONTRACT --&gt; FUSE
+  RFP --&gt; FUSE
+  FIN --&gt; FUSE
+  POL --&gt; FUSE
+  TECH --&gt; FUSE
+  FUSE --&gt; RERANK[&quot;Reranker Agent&quot;]
+  RERANK --&gt; VERIFY[&quot;Evidence Verifier Agent&quot;]
+  VERIFY --&gt; ENOUGH{&quot;Enough Verified Evidence?&quot;}
+  ENOUGH --&gt;|Yes| ANSWER[&quot;Answer Synthesis Agent&quot;]
+  ENOUGH --&gt;|No| ASK[&quot;Abstain / Ask Clarifying&lt;br/&gt;Question&quot;]
+  ANSWER --&gt; AUDIT[&quot;Citation + Audit Agent&quot;]
+  ASK --&gt; AUDIT
+  AUDIT --&gt; FINAL[&quot;Final Response&quot;]
+  </pre>
+  <p>Figure 13. Query-Time Multi-Agent Architecture</p>
+  <h1>16. Query Planner Agent</h1>
+  <h2>Purpose</h2>
+  <p>The Query Planner Agent converts the user’s question into a retrieval plan.</p>
+  <p>This is like Spark Catalyst, but for RAG retrieval.</p>
+  <pre class="mermaid">
+flowchart TB
+  U[&quot;User Question&quot;] --&gt; INTENT[&quot;Intent Detection&quot;]
+  INTENT --&gt; ENTITY[&quot;Entity Extraction&quot;]
+  ENTITY --&gt; DOMAIN[&quot;Domain Detection&quot;]
+  DOMAIN --&gt; FILTER[&quot;Metadata Filter Builder&quot;]
+  FILTER --&gt; ACL[&quot;ACL Resolver&quot;]
+  ACL --&gt; COLLECTION[&quot;Collection Selection&quot;]
+  COLLECTION --&gt; TOPK[&quot;Top-K Allocation&quot;]
+  TOPK --&gt; STRAT[&quot;Retrieval Strategy Selection&quot;]
+  STRAT --&gt; PLAN[&quot;Physical Retrieval Plan&quot;]
+  </pre>
+  <p>Figure 14. Query Planner Workflow</p>
+  <h2>Example Question</h2>
+  <p>Compare Vendor ABC&#x27;s RFP pricing requirement, signed contract payment terms,and finance approval notes.</p>
+  <h2>Logical Plan</h2>
+  <p>{ &quot;intent&quot;: &quot;compare_documents&quot;, &quot;domains&quot;: [&quot;rfp&quot;, &quot;contract&quot;, &quot;finance&quot;], &quot;entities&quot;: { &quot;vendor&quot;: &quot;Vendor ABC&quot; }, &quot;required_evidence&quot;: [ &quot;pricing requirement&quot;, &quot;payment terms&quot;, &quot;approval notes&quot; ]}</p>
+  <h2>Physical Plan</h2>
+  <p>{ &quot;collections&quot;: [ &quot;rfp_vectors&quot;, &quot;contracts_vectors&quot;, &quot;finance_vectors&quot; ], &quot;filters&quot;: { &quot;tenant_id&quot;: &quot;company_a&quot;, &quot;vendor&quot;: &quot;Vendor ABC&quot;, &quot;latest_version&quot;: true, &quot;security_acl&quot;: &quot;resolved_user_acl&quot; }, &quot;retrieval_strategy&quot;: &quot;hybrid&quot;, &quot;top_k_per_collection&quot;: 50, &quot;reranker&quot;: &quot;cross_encoder_or_gemini_judge&quot;}</p>
+  <h1>17. Domain Retrieval Agents</h1>
+  <h2>Purpose</h2>
+  <p>Each domain retrieval agent understands one business domain.</p>
+  <pre class="mermaid">
+flowchart TB
+  PLAN[&quot;Retrieval Plan&quot;] --&gt; DRA[&quot;Domain Retrieval Agent&quot;]
+  DRA --&gt; ACL[&quot;Apply ACL Filter&quot;]
+  DRA --&gt; META[&quot;Apply Metadata Filters&quot;]
+  DRA --&gt; VEC[&quot;Vector Search&quot;]
+  DRA --&gt; KEY[&quot;Keyword/BM25 Search&quot;]
+  DRA --&gt; EXACT[&quot;Exact ID Search&quot;]
+  DRA --&gt; VER[&quot;Version Filter&quot;]
+  ACL --&gt; CAND[&quot;Candidate Results&quot;]
+  META --&gt; CAND
+  VEC --&gt; CAND
+  KEY --&gt; CAND
+  EXACT --&gt; CAND
+  VER --&gt; CAND
+  CAND --&gt; RANK[&quot;Domain-Level Ranked&lt;br/&gt;Results&quot;]
+  </pre>
+  <p>Figure 15. Domain Retrieval Agent Pattern</p>
+  <h2>Domain Agents</h2>
+  <table>
+    <tbody>
+      <tr><th>Agent</th><th>Search Focus</th></tr>
+      <tr><td>Contract Retrieval Agent</td><td>Clauses, obligations, payment terms, signed version</td></tr>
+      <tr><td>RFP Retrieval Agent</td><td>Requirements, proposals, scoring, pricing</td></tr>
+      <tr><td>Finance Retrieval Agent</td><td>Approval notes, invoices, budgets, tables</td></tr>
+      <tr><td>HR Policy Retrieval Agent</td><td>HR rules, benefits, PTO, compliance</td></tr>
+      <tr><td>Legal Retrieval Agent</td><td>Legal memos, case references, contracts</td></tr>
+      <tr><td>Technical Docs Agent</td><td>APIs, architecture, SOPs, manuals</td></tr>
+      <tr><td>Security/Compliance Agent</td><td>Controls, policies, audit evidence</td></tr>
+    </tbody>
+  </table>
+  <h1>18. Fusion + Dedup Agent</h1>
+  <h2>Purpose</h2>
+  <p>When multiple agents return results, this agent merges them.</p>
+  <pre class="mermaid">
+flowchart LR
+  V[&quot;Vector Results&quot;] --&gt; F[&quot;Fusion + Dedup Agent&quot;]
+  K[&quot;Keyword Results&quot;] --&gt; F
+  M[&quot;Metadata/Exact Match&lt;br/&gt;Results&quot;] --&gt; F
+  F --&gt; N[&quot;Normalize Scores&quot;]
+  N --&gt; RRF[&quot;Reciprocal Rank Fusion&quot;]
+  RRF --&gt; D[&quot;Deduplicate Chunks&quot;]
+  D --&gt; S[&quot;Ensure Source Diversity&quot;]
+  S --&gt; C[&quot;Candidate Evidence Set&quot;]
+  </pre>
+  <p>Figure 16. Fusion Agent Architecture</p>
+  <h2>Fusion Rules</h2>
+  <h1>1. Prefer chunks that match both semantic and keyword search.</h1>
+  <h1>2. Prefer exact entity matches.</h1>
+  <h1>3. Prefer latest version unless user asks historical.</h1>
+  <h1>4. Remove duplicate chunks from same page/section.</h1>
+  <h1>5. Keep source diversity across contracts, RFPs, finance docs.</h1>
+  <h1>6. Never include unauthorized chunks.</h1>
+  <h1>19. Reranker Agent</h1>
+  <h2>Purpose</h2>
+  <p>The Reranker Agent reduces many candidates to the best evidence.</p>
+  <pre class="mermaid">
+flowchart TB
+  CAND[&quot;Candidate Evidence Set&lt;br/&gt;Top 50-150 chunks&quot;] --&gt; R[&quot;Reranker Agent&quot;]
+  R --&gt; SEM[&quot;Semantic Relevance&quot;]
+  R --&gt; ENT[&quot;Entity Match&quot;]
+  R --&gt; AUTH[&quot;Document Authority&quot;]
+  R --&gt; LATEST[&quot;Latest Version&quot;]
+  R --&gt; CONF[&quot;Source/Page Confidence&quot;]
+  R --&gt; COVER[&quot;Question Coverage&quot;]
+  SEM --&gt; GLOBAL[&quot;Global Reranked Evidence&quot;]
+  ENT --&gt; GLOBAL
+  AUTH --&gt; GLOBAL
+  LATEST --&gt; GLOBAL
+  CONF --&gt; GLOBAL
+  COVER --&gt; GLOBAL
+  GLOBAL --&gt; TOP[&quot;Top 5-12 Chunks&quot;]
+  </pre>
+  <p>Figure 17. Reranker Agent Workflow</p>
+  <h2>Reranking Criteria</h2>
+  <p>semantic relevanceexact vendor/document/entity matchlatest versiondocument authoritypage/section confidenceparse confidenceOCR confidencequestion coveragesource diversity</p>
+  <h1>20. Evidence Verifier Agent</h1>
+  <h2>Purpose</h2>
+  <p>This is the trust layer.</p>
+  <p>The verifier checks whether the answer can be safely generated.</p>
+  <pre class="mermaid">
+flowchart TB
+  TOP[&quot;Top Evidence Chunks&quot;] --&gt; EV[&quot;Evidence Verifier Agent&quot;]
+  EV --&gt; ACL[&quot;ACL Check&quot;]
+  EV --&gt; CIT[&quot;Citation Exists Check&quot;]
+  EV --&gt; LATEST[&quot;Latest Version Check&quot;]
+  EV --&gt; OCR[&quot;OCR/Parse Confidence&lt;br/&gt;Check&quot;]
+  EV --&gt; CONTRA[&quot;Contradiction Check&quot;]
+  EV --&gt; CLAIM[&quot;Claim Support Check&quot;]
+  ACL --&gt; SAFE{&quot;Evidence Safe?&quot;}
+  CIT --&gt; SAFE
+  LATEST --&gt; SAFE
+  OCR --&gt; SAFE
+  CONTRA --&gt; SAFE
+  CLAIM --&gt; SAFE
+  SAFE --&gt;|Yes| SEND[&quot;Send to Answer Agent&quot;]
+  SAFE --&gt;|No| ABSTAIN[&quot;Abstain / Ask Clarifying&lt;br/&gt;Question / Human Review&quot;]
+  </pre>
+  <p>Figure 18. Evidence Verifier Architecture</p>
+  <h2>Verification Rules</h2>
+  <p>Every claim must be supported by retrieved evidence.Every citation must map to a real document/page/section.The user must have access to every cited chunk.Old versions must not be used unless requested.Low-confidence OCR should be disclosed or excluded.Conflicting evidence should be surfaced, not hidden.</p>
+  <h1>21. Answer Synthesis Agent</h1>
+  <h2>Purpose</h2>
+  <p>This agent writes the final answer using only verified context.</p>
+  <pre class="mermaid">
+flowchart TB
+  V[&quot;Verified Evidence&quot;] --&gt; A[&quot;Answer Synthesis Agent&quot;]
+  A --&gt; P[&quot;Build Grounded Prompt&quot;]
+  P --&gt; G[&quot;Generate Answer&quot;]
+  G --&gt; C[&quot;Attach Citations&quot;]
+  C --&gt; CONF[&quot;Confidence Note&quot;]
+  CONF --&gt; AUDIT[&quot;Audit Log&quot;]
+  AUDIT --&gt; FINAL[&quot;Final Answer&quot;]
+  </pre>
+  <p>Figure 19. Answer Synthesis Agent Workflow</p>
+  <h2>Output Format</h2>
+  <h1>1. Answer:Vendor ABC&#x27;s signed contract states that invoices are payable within thirtycalendar days after approval. The RFP pricing section required monthly billing,and the finance approval memo confirms monthly billing approval.Sources:</h1>
+  <h1>2. Vendor ABC MSA, Page 2, Payment Terms</h1>
+  <h1>3. RFP-2026-ABC, Page 14, Pricing Requirements</h1>
+  <h1>4. Finance Approval Memo, Page 3</h1>
+  <p>Use Gemini/Vertex AI here when you need managed enterprise deployment, strong reasoning, multimodal understanding, and Gemini-native ADK integration. ADK documentation says it provides easy access to Gemini and can connect to other leading and locally running models, with Google Cloud deployment options for performance, reliability, security, access, safety, and cost management.</p>
+  <h1>22. Observability and Audit Agent</h1>
+  <h2>Purpose</h2>
+  <p>Every agent call must be traceable.</p>
+  <pre class="mermaid">
+flowchart TB
+  CALLS[&quot;All Agent Calls&quot;] --&gt; TRACE[&quot;Tracing Middleware&quot;]
+  TRACE --&gt; L[&quot;LangSmith Traces&quot;]
+  TRACE --&gt; O[&quot;OpenTelemetry&quot;]
+  TRACE --&gt; P[&quot;Prometheus Metrics&quot;]
+  TRACE --&gt; G[&quot;Grafana Dashboards&quot;]
+  TRACE --&gt; A[&quot;Audit DB&quot;]
+  L --&gt; DEBUG[&quot;Debug Retrieval Failures&quot;]
+  O --&gt; DIST[&quot;Distributed Trace&quot;]
+  P --&gt; LAT[&quot;Latency/Throughput&lt;br/&gt;Metrics&quot;]
+  G --&gt; OPS[&quot;Ops Dashboards&quot;]
+  A --&gt; COMP[&quot;Compliance Audit&quot;]
+  </pre>
+  <p>Figure 20. Observability Architecture</p>
+  <h2>Track:</h2>
+  <p>agent nameinput/outputtool callsmodel usedlatencycostretrieved chunksreranked chunksverification resultcitationsuser feedbackfailure reason</p>
+  <p>LangSmith provides visibility from individual traces to production-wide metrics, supports framework/provider integrations, trace filtering/export, dashboards, alerts, automations, and feedback collection.</p>
+  <h1>23. Storage Architecture</h1>
+  <pre class="mermaid">
+flowchart TB
+  RAW[&quot;Raw Files&quot;] --&gt; ROS[(&quot;Raw Object Store&quot;)]
+  MD[&quot;Canonical Markdown&quot;] --&gt; MDS[(&quot;Processed Markdown Store&quot;)]
+  JSON[&quot;Structured JSON&quot;] --&gt; JSONS[(&quot;Processed JSON Store&quot;)]
+  CHUNKS[&quot;Chunks&quot;] --&gt; CS[(&quot;Chunk Store&lt;br/&gt;PostgreSQL/Iceberg/Delta&quot;)]
+  EMB[&quot;Embeddings&quot;] --&gt; VDB[(&quot;Vector DB&quot;)]
+  TEXT[&quot;Exact Text&quot;] --&gt; BM25[(&quot;OpenSearch BM25&quot;)]
+  META[&quot;Metadata / ACL / Lineage&quot;] --&gt; MDB[(&quot;Metadata DB&quot;)]
+  AUDIT[&quot;Traces / Audits&quot;] --&gt; ADB[(&quot;Audit/Observability DB&quot;)]
+  </pre>
+  <p>Figure 21. Storage Architecture</p>
+  <h2>Store Responsibilities</h2>
+  <table>
+    <tbody>
+      <tr><th>Store</th><th>Responsibility</th></tr>
+      <tr><td>Raw Object Store</td><td>Original untouched files</td></tr>
+      <tr><td>Markdown Store</td><td>Clean LLM-ready markdown</td></tr>
+      <tr><td>JSON Store</td><td>Machine-readable layout/table/page data</td></tr>
+      <tr><td>Chunk Store</td><td>Chunk objects before embedding</td></tr>
+      <tr><td>Vector DB</td><td>Semantic search</td></tr>
+      <tr><td>OpenSearch</td><td>Keyword, exact ID, BM25 search</td></tr>
+      <tr><td>Metadata DB</td><td>ACLs, versions, lineage, status</td></tr>
+      <tr><td>Audit DB</td><td>Traces, answer history, retrieved evidence</td></tr>
+    </tbody>
+  </table>
+  <h1>24. Kafka Topic Architecture</h1>
+  <pre class="mermaid">
+flowchart LR
+  D[&quot;document.discovered&quot;] --&gt; RAW[&quot;document.raw.stored&quot;]
+  RAW --&gt; C[&quot;document.classification.completed&quot;]
+  C --&gt; R[&quot;document.parser.route.selected&quot;]
+  R --&gt; S[&quot;document.parsing.started&quot;]
+  S --&gt; DONE[&quot;document.parsed.completed&quot;]
+  DONE --&gt; MD[&quot;document.markdown.ready&quot;]
+  MD --&gt; CH[&quot;document.chunked.completed&quot;]
+  CH --&gt; EMB[&quot;document.embedding.completed&quot;]
+  EMB --&gt; IDX[&quot;document.indexed.completed&quot;]
+  C -.-&gt; DL[&quot;document.deadletter&quot;]
+  </pre>
+  <p>Figure 22. Kafka Event Flow</p>
+  <h2>Kafka Event Rule</h2>
+  <p>Use:</p>
+  <p>partition_key = tenant_id + document_id</p>
+  <p>This keeps events for the same document ordered while allowing huge parallelism across different documents.</p>
+  <p>Spark’s Kafka integration documentation discusses partition-to-partition parallelism, offsets, metadata, and offset storage choices; for production, vector writes and metadata updates should be idempotent and offsets should be committed only after output is safely stored.</p>
+  <h1>25. Deployment Architecture</h1>
+  <pre class="mermaid">
+flowchart TB
+  subgraph CLOUD[&quot;Kubernetes / Cloud Platform&quot;]
+    K[&quot;Kafka Cluster&quot;] --&gt; S[&quot;Spark Cluster&quot;]
+    S --&gt; P[&quot;Parser Workers&quot;]
+    S --&gt; E[&quot;Embedding Workers&quot;]
+    API[&quot;API Gateway&quot;] --&gt; Q[&quot;Query Orchestrator&quot;]
+    Q --&gt; AG[&quot;Agent Services&lt;br/&gt;LangGraph/ADK&quot;]
+  end
+  subgraph STORAGE[&quot;Storage&quot;]
+    OBJ[(&quot;Object Storage&quot;)]
+    VDB[(&quot;Vector DB Cluster&quot;)]
+    OS[(&quot;OpenSearch Cluster&quot;)]
+    PG[(&quot;PostgreSQL Metadata DB&quot;)]
+  end
+  subgraph OBS[&quot;Observability&quot;]
+    LS[&quot;LangSmith&quot;]
+    OT[&quot;OpenTelemetry Collector&quot;] --&gt; PROM[&quot;Prometheus&quot;] --&gt; GRAF[&quot;Grafana&quot;]
+  end
+  P --&gt; OBJ
+  E --&gt; VDB
+  E --&gt; OS
+  AG --&gt; VDB
+  AG --&gt; OS
+  AG --&gt; PG
+  AG --&gt; LS
+  AG --&gt; OT
+  </pre>
+  <p>Figure 23. Deployment View</p>
+  <h1>26. Final Recommended Agent Boundaries</h1>
+  <h2>Background Processing Agents</h2>
+  <p>These are event-driven and Spark-friendly:</p>
+  <p>Ingestion Agent GroupClassification Agent GroupParser Router AgentParser Agent GroupParser Quality Judge AgentMarkdown Builder AgentJSON Builder AgentChunking Agent GroupEmbedding Agent GroupVector Writer Agent</p>
+  <h2>Query-Time Agents</h2>
+  <p>These run inside LangGraph/ADK:</p>
+  <p>Conversation AgentSecurity + ACL AgentQuery Understanding AgentRetrieval Planner AgentDomain Retrieval AgentsFusion + Dedup AgentReranker AgentEvidence Verifier AgentAnswer Synthesis AgentCitation + Audit Agent</p>
+  <h1>27. Final Clean Architecture Summary</h1>
+  <p>Kafka moves document events across the platform.Spark performs distributed classification, parsing orchestration, chunking, embedding, and indexing.Docling / Unstructured / pdfplumber / OCR extract clean structure from messy enterprise documents.Markdown + JSON stores preserve both LLM-ready text and machine-readable document structure.Vector DB + OpenSearch provide semantic and keyword retrieval.LangGraph / ADK orchestrate multi-agent query-time reasoning and retrieval.LangChain provides common model/tool/retriever interfaces.LangSmith / OpenTelemetry provide tracing, debugging, monitoring, and evaluation.Gemini / Vertex AI / local models handle final answers, multimodal understanding, hard fragment enrichment, and verification.</p>
+  <p>The simplest manager-level explanation:</p>
+  <p>We are building a distributed multi-agent document intelligence platform, not a basic RAG chatbot. Kafka moves document events, Spark processes documents at scale, parser agents create trusted markdown and JSON, embedding agents index the knowledge, retrieval agents search the right domains, verifier agents check evidence, and the answer agent only responds from verified, permission-safe context.</p>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+  </script>
+</body>
+</html>
