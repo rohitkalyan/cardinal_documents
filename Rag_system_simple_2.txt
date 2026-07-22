@@ -1,0 +1,329 @@
+Create a professional AI/RAG system architecture diagram that closely matches the following design.
+
+CANVAS AND STYLE
+- Use a 16:9 landscape canvas.
+- Use a very dark navy-to-black background.
+- Use a modern cybersecurity/AI architecture style.
+- Use rounded rectangular section borders with subtle matching-color glow.
+- Use white text and simple white outline icons.
+- Keep every component as an independent shape.
+- Do not use swimlanes, tables, or expandable containers.
+- Preserve all wording exactly.
+- Use straight and curved connectors without allowing lines to cross through components.
+
+LAYOUT
+
+Arrange the architecture in two main rows.
+
+TOP ROW, LEFT TO RIGHT:
+1. Stress Testing / Red Teaming
+2. User Query
+3. Reasoning Engine
+4. Human Validation
+5. Evaluation
+
+BOTTOM ROW, LEFT TO RIGHT:
+1. Data Sources
+2. Ingestion / Data Processing
+3. Retrieval Funnel
+4. Database Layer
+
+SECTION 1: STRESS TESTING / RED TEAMING
+Position: Upper-left
+Border and glow: Bright red
+
+Title:
+STRESS TESTING / RED TEAMING
+
+Place three equal cards horizontally inside:
+
+Card 1:
+Prompt Injection
+Use a browser/code-window icon.
+
+Card 2:
+Information Evasion
+Use a masked-face or security-evasion icon.
+
+Card 3:
+Biased Opinion
+Use a balance-scale icon.
+
+Below the cards, add a red dashed rounded rectangle:
+
+TOOLS
+Garak • Lakera • PyRIT • NeMo Guardrails
+
+SECTION 2: USER QUERY
+Position: Above and slightly left of the Reasoning Engine
+Show a white user/person icon.
+
+Label:
+User Query
+
+Connect User Query to Reasoning Engine with a solid white arrow pointing right.
+
+SECTION 3: REASONING ENGINE
+Position: Upper center
+Border and glow: Bright magenta/purple
+
+Title:
+REASONING ENGINE
+
+Place three equal cards horizontally:
+
+Card 1:
+Planner
+Use a planning or strategy-board icon.
+
+Card 2:
+Tool Execution
+Use a crossed wrench and screwdriver icon.
+
+Card 3:
+Conditional Router
+Use a routing or decision-workflow icon.
+
+SECTION 4: HUMAN VALIDATION
+Position: Upper center-right
+Border and glow: Golden yellow
+
+Title:
+HUMAN VALIDATION
+
+Place three equal cards horizontally:
+
+Card 1:
+Gatekeeper
+Use a person icon.
+
+Card 2:
+Auditor
+Use a person icon.
+
+Card 3:
+Strategist
+Use a connected-nodes strategy icon.
+
+Connect Reasoning Engine to Human Validation using a solid white arrow pointing right.
+
+Above this connector, add a yellow warning icon and the note:
+
+High-stakes actions route here
+before final execution.
+
+Add a curved golden-yellow dashed feedback arrow from the Strategist area back toward the Reasoning Engine.
+
+Label this connector:
+
+strategist feedback
+(shapes policies & routing)
+
+SECTION 5: EVALUATION
+Position: Upper-right
+Border and glow: Golden yellow
+
+Title:
+EVALUATION
+
+Place three equal cards horizontally:
+
+Card 1:
+LLM
+Judges
+Use an AI brain or judge icon.
+
+Card 2:
+Precision &
+Recall
+Use a target icon.
+
+Card 3:
+Latency &
+Cost
+Use a stopwatch icon.
+
+Add a golden-yellow dashed arrow from Evaluation toward Human Validation, pointing left.
+
+SECTION 6: DATA SOURCES
+Position: Lower-left
+Border and glow: Bright green
+
+Title:
+DATA SOURCES
+
+Arrange these vertically with white icons:
+
+Documents
+Use a document icon.
+
+Code
+Use a code-window icon.
+
+Spreadsheets
+Use a grid/spreadsheet icon.
+
+Images
+Use an image-stack icon.
+
+Connect Data Sources to Ingestion / Data Processing using a solid white arrow pointing right.
+
+SECTION 7: INGESTION / DATA PROCESSING
+Position: Lower center-left
+Make this the largest section in the lower row.
+Border and glow: Bright green
+
+Title:
+INGESTION / DATA PROCESSING
+
+Place three processing-stage panels horizontally.
+
+PANEL 1
+Number badge: 1
+Title:
+Re-Structuring Data
+
+Components:
+Document
+Parser
+
+Structure
+Analyzer
+
+Use a document-processing icon and a hierarchy/tree icon.
+
+PANEL 2
+Number badge: 2
+Title:
+Structure-Aware Chunking
+
+Components:
+Table
+Preserver
+
+Heading
+Detector
+
+Boundary
+Detector
+
+Use a table icon, structural blocks icon, and boundary/network icon.
+
+PANEL 3
+Number badge: 3
+Title:
+Metadata Creation
+
+Components:
+Summary
+Generator
+
+Keyword
+Extractor
+
+Question
+Generator
+
+Use a document/summary icon, binoculars icon, and question-mark icon.
+
+At the bottom of the complete section, add:
+
+Parse with structure. Chunk by meaning. Enrich with metadata.
+
+SECTION 8: RETRIEVAL FUNNEL
+Position: Lower center-right
+Border and glow: Bright blue
+
+Title:
+RETRIEVAL FUNNEL
+
+Draw a large inverted funnel divided into three horizontal levels.
+
+Top and widest level:
+1    SQL Filter
+
+Middle level:
+2    Hybrid Search
+     (dense vectors + BM25)
+
+Bottom and narrowest level:
+3    Re-rank
+
+Place small database, search, and ranking/filter icons vertically to the left of the funnel.
+
+Below the funnel, add:
+
+10M → 100K → 100 → 5
+
+Treat retrieval as a funnel,
+not a lookup.
+
+SECTION 9: DATABASE LAYER
+Position: Lower-right
+Border and glow: Purple
+
+Title:
+DATABASE LAYER
+
+Place two equal cards horizontally:
+
+Card 1:
+Vector Store
+Use a vector/geometry icon.
+
+Card 2:
+Relational
+Database
+Use a database-cylinder icon.
+
+CONNECTORS
+
+1. Stress Testing / Red Teaming to Reasoning Engine:
+Use a red dashed horizontal arrow pointing right.
+Label:
+adversarial tests
+
+2. Stress Testing / Red Teaming to Ingestion / Data Processing:
+Use a red dashed connector that moves right and then downward.
+Label:
+adversarial
+tests
+
+3. Data Sources to Ingestion / Data Processing:
+Solid white arrow pointing right.
+
+4. Ingestion / Data Processing to Database Layer:
+Use a solid white connector traveling right beneath the Retrieval Funnel, then upward into Database Layer.
+
+5. Database Layer to Retrieval Funnel:
+Solid white arrow pointing left.
+
+6. Database Layer to Evaluation:
+Use a white dashed curved connector traveling upward into Evaluation.
+
+Label:
+continuous evaluation
+(feedback loop)
+
+7. Evaluation to Human Validation:
+Golden-yellow dashed arrow pointing left.
+
+8. Human Validation Strategist to Reasoning Engine:
+Golden-yellow dashed curved feedback arrow pointing left.
+
+COLOR PALETTE
+- Background: #071018 or nearly black navy
+- Stress Testing: #FF2B2B
+- Data Sources and Ingestion: #6BFF3D
+- Reasoning Engine: #E347D5
+- Human Validation and Evaluation: #FFC400
+- Retrieval Funnel: #45B6FF
+- Database Layer: #C653E8
+- Main connector lines and text: White
+
+FINAL APPEARANCE
+- Keep generous spacing between sections.
+- Make all titles uppercase, left-aligned, and bold.
+- Use consistent rounded corners and card sizes.
+- Use thin neon-colored borders with subtle glow.
+- Do not add any components, connections, or text not listed above.
